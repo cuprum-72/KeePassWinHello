@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Reflection;
+using System.Windows.Forms;
 using KeePass.Forms;
 using KeePass.Plugins;
 using KeePass.UI;
@@ -39,7 +40,10 @@ namespace KeePassWinHello
 
         public override string UpdateUrl
         {
-            get { return "https://github.com/sirAndros/KeePassWinHello/raw/master/keepass.version"; }
+            get
+            {
+                return "https://raw.githubusercontent.com/<OWNER>/<REPOSITORY>/<BRANCH>/keepass.version";
+            }
         }
 
         public override bool Initialize(IPluginHost host)
@@ -101,16 +105,17 @@ namespace KeePassWinHello
                 var keyPromptForm = e.Form as KeyPromptForm;
                 if (keyPromptForm != null)
                 {
-                    var keyManager = _keyManagerProvider.ObtainKeyManager();
-                    if (keyManager != null)
+                    // On the secure desktop, preserve the existing behavior: the
+                    // prompt must be restarted on the main desktop before Hello.
+                    if (keyPromptForm.SecureDesktopMode)
                     {
-                        using (_uiContextManager.PushContext("Unlocking a database", keyPromptForm))
-                        {
-                            lock (_unlockMutex)
-                                keyManager.OnKeyPrompt(keyPromptForm);
-                            return;
-                        }
+                        HandleKeyPrompt(keyPromptForm);
                     }
+                    else
+                    {
+                        HandleKeyPromptAfterShown(keyPromptForm);
+                    }
+                    return;
                 }
 
                 var optionsForm = e.Form as OptionsForm;
@@ -129,5 +134,67 @@ namespace KeePassWinHello
                 _uiContextManager.CurrentContext.ShowError(ex);
             }
         }
+        private void HandleKeyPromptAfterShown(KeyPromptForm keyPromptForm)
+        {
+            EventHandler shownHandler = null;
+            shownHandler = delegate
+            {
+                keyPromptForm.Shown -= shownHandler;
+
+                if (keyPromptForm.IsDisposed || !keyPromptForm.IsHandleCreated)
+                    return;
+
+                try
+                {
+                    // Run after the Shown event has completed, so the WinHello
+                    // parent HWND is visible and has had a chance to become active.
+                    keyPromptForm.BeginInvoke((MethodInvoker)delegate
+                    {
+                        HandleKeyPrompt(keyPromptForm);
+                    });
+                }
+                catch (InvalidOperationException)
+                {
+                    // The form was closed while the callback was being queued.
+                }
+            };
+
+            keyPromptForm.Shown += shownHandler;
+        }
+
+        private void HandleKeyPrompt(KeyPromptForm keyPromptForm)
+        {
+            if (keyPromptForm == null || keyPromptForm.IsDisposed ||
+                _keyManagerProvider == null || _uiContextManager == null)
+                return;
+
+            try
+            {
+                var keyManager = _keyManagerProvider.ObtainKeyManager();
+                if (keyManager == null)
+                    return;
+
+                using (_uiContextManager.PushContext("Unlocking a database", keyPromptForm))
+                {
+                    if (!keyPromptForm.SecureDesktopMode && keyPromptForm.Visible)
+                    {
+                        keyPromptForm.BringToFront();
+                        keyPromptForm.Activate();
+                    }
+
+                    lock (_unlockMutex)
+                        keyManager.OnKeyPrompt(keyPromptForm);
+                }
+            }
+            catch (Exception ex)
+            {
+                var context = _uiContextManager != null ? _uiContextManager.CurrentContext : null;
+                if (context != null)
+                    context.ShowError(ex);
+                else
+                    Debug.Fail(ex.Message);
+            }
+        }
+
     }
 }

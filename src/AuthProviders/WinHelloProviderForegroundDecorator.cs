@@ -1,18 +1,23 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Diagnostics;
+using System.Windows.Forms;
 
 namespace KeePassWinHello
 {
-    class WinHelloProviderForegroundDecorator : IAuthProvider
+    internal sealed class WinHelloProviderForegroundDecorator : IAuthProvider
     {
         private readonly IAuthProvider _winHelloProvider;
         private readonly UIContextManager _uiContextManager;
 
-        public WinHelloProviderForegroundDecorator(IAuthProvider provider, UIContextManager uiContextManager)
+        public WinHelloProviderForegroundDecorator(
+            IAuthProvider provider,
+            UIContextManager uiContextManager)
         {
             if (provider == null)
                 throw new ArgumentNullException("provider");
+
+            if (uiContextManager == null)
+                throw new ArgumentNullException("uiContextManager");
 
             _winHelloProvider = provider;
             _uiContextManager = uiContextManager;
@@ -38,56 +43,89 @@ namespace KeePassWinHello
 
         public byte[] PromptToDecrypt(byte[] data)
         {
-            using (var tokenSource = new CancellationTokenSource())
-            {
-                Win32Window.AllowAllSetForeground();
-                Task.Factory.StartNew(MakePromptWindowForegroundSafe, tokenSource.Token);
+            ActivateCurrentParentWindowSafe();
 
-                try
-                {
-                    var result = _winHelloProvider.PromptToDecrypt(data);
-                    BringKeePassMainWindowToFrontSafe();
-                    return result;
-                }
-                catch
-                {
-                    tokenSource.Cancel();
-                    throw;
-                }
-            }
+            byte[] result =
+                _winHelloProvider.PromptToDecrypt(data);
+
+            QueueKeePassMainWindowActivationSafe();
+
+            return result;
         }
 
-        private void BringKeePassMainWindowToFrontSafe()
+        private void ActivateCurrentParentWindowSafe()
         {
             try
             {
-                var keePassWindowHandle = _uiContextManager.MainWindowHandle;
-                var keePassWindow = Win32Window.GetOrNull(keePassWindowHandle);
-                if (keePassWindow != null)
-                    keePassWindow.EnsureForeground();
+                UIContext context =
+                    _uiContextManager.CurrentContext;
+
+                Form parentForm =
+                    context != null
+                        ? context.ParentWindow as Form
+                        : null;
+
+                if (parentForm == null ||
+                    parentForm.IsDisposed ||
+                    !parentForm.IsHandleCreated ||
+                    !parentForm.Visible)
+                {
+                    return;
+                }
+
+                parentForm.BringToFront();
+                parentForm.Activate();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.Fail(ex.Message);
+                Debug.Fail(ex.Message);
             }
         }
 
-        private void MakePromptWindowForegroundSafe()
+        private void QueueKeePassMainWindowActivationSafe()
         {
             try
             {
-#if DEBUG
-                const string targetWindowClass = null;
-#else
-                const string targetWindowClass = "Credential Dialog Xaml Host"; 
-#endif
-                var win = Win32Window.Find(targetWindowClass, "Windows Security", 2000);
-                if (win != null)
-                    win.EnsureForeground();
+                Form mainWindow =
+                    _uiContextManager.MainWindow;
+
+                if (mainWindow == null ||
+                    mainWindow.IsDisposed ||
+                    !mainWindow.IsHandleCreated)
+                {
+                    return;
+                }
+
+                mainWindow.BeginInvoke(
+                    (MethodInvoker)delegate
+                    {
+                        try
+                        {
+                            if (mainWindow.IsDisposed ||
+                                !mainWindow.IsHandleCreated ||
+                                !mainWindow.Visible ||
+                                mainWindow.WindowState ==
+                                    FormWindowState.Minimized)
+                            {
+                                return;
+                            }
+
+                            mainWindow.BringToFront();
+                            mainWindow.Activate();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.Fail(ex.Message);
+                        }
+                    });
+            }
+            catch (InvalidOperationException ex)
+            {
+                Debug.Fail(ex.Message);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.Fail(ex.Message);
+                Debug.Fail(ex.Message);
             }
         }
     }

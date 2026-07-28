@@ -23,15 +23,11 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
-    <Compile Update="Settings\OptionsPanel.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
+    <Compile Update="Settings\OptionsPanel.cs" />
     <Compile Update="Settings\OptionsPanel.Designer.cs">
       <DependentUpon>OptionsPanel.cs</DependentUpon>
     </Compile>
-    <Compile Update="Settings\OptionsPanelCreation.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
+    <Compile Update="Settings\OptionsPanelCreation.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

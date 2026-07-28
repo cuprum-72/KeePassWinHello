@@ -1,3 +1,10 @@
+﻿# KeePassWinHello 3.3.2
+
+- Fix #107: preserve the KeePass main-window state after successful Windows Hello authentication.
+- Fix #86: wait until the normal `KeyPromptForm` is shown before starting Windows Hello, making its owner visible and active.
+- Remove global foreground permission, synthetic Alt input, forced restore/minimize calls and localized global searches for the Windows Security dialog.
+- Make `UIContextManager` context mutations thread-safe and disposal idempotent.
+
 # [KeePassWinHello 3.3](https://github.com/sirAndros/KeePassWinHello/releases/tag/v3.3)
 
 Fixed following issues:
